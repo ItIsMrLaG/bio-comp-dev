@@ -1,5 +1,4 @@
 ccflags-y := -Wall						\
-		-Wextra					        \
 		-Wno-missing-field-initializers	\
 		-Wno-unused-parameter			\
 		-Wformat				        \

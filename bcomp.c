@@ -47,46 +47,40 @@ static void bcomp_bdev_free(struct bcomp_bdev *dev)
 	del_gendisk(dev->bcomp_disk);
 	put_disk(dev->bcomp_disk);
 
-	blkdev_put(
-		dev->underlying_bdev,
-		FMODE_WRITE |
-			FMODE_READ); //TODO: FMODE_WRITE | FMODE_READ or something else
+	blkdev_put(dev->underlying_bdev, FMODE_WRITE | FMODE_READ);
 
 	bioset_exit(dev->bs);
-	kfree(dev->bs);
 
+	kfree(dev->bs);
 	kfree(dev);
 }
 
 static void bcomp_free(void)
 {
-	if (bcomp_dev == NULL)
+	if (bcomp_dev == NULL) {
 		return;
+	}
 
 	bcomp_bdev_free(bcomp_dev);
 	bcomp_dev = NULL;
 }
 
-//TODO: rewrite -> bcomp_bdev_init (without allocation)
 static int bcomp_bdev_alloc(const char *map_disk_path, struct bcomp_bdev **d)
 {
 	struct gendisk *disk;
 	struct bcomp_bdev *dev;
 	struct block_device *bdev;
 	struct bio_set *bs;
-	char buf[DISK_NAME_LEN];
+	sector_t cp;
 	int ret;
 
-	//TODO: Is in my case holder == dev? (is it correct)
+	bcomp_log(map_disk_path);
+
 	bdev = blkdev_get_by_path(map_disk_path, FMODE_WRITE | FMODE_READ,
 				  (*d));
 	if (IS_ERR(bdev)) {
+		bcomp_log("incorrect path");
 		ret = PTR_ERR(bdev);
-		goto exit_fail;
-	}
-
-	if (!bdev->bd_disk->fops->submit_bio) {
-		ret = -EPERM;
 		goto exit_fail;
 	}
 
@@ -105,6 +99,7 @@ static int bcomp_bdev_alloc(const char *map_disk_path, struct bcomp_bdev **d)
 	}
 
 	bioset_init(bs, POOL_SIZE, 0, BIOSET_NEED_BVECS);
+	dev->bs = bs;
 
 	disk = dev->bcomp_disk = blk_alloc_disk(NUMA_NO_NODE);
 	if (!disk) {
@@ -114,13 +109,17 @@ static int bcomp_bdev_alloc(const char *map_disk_path, struct bcomp_bdev **d)
 
 	disk->major = bcomp_major;
 	disk->first_minor = bcomp_free_minor;
+	disk->minors = 1;
 	++bcomp_free_minor;
 	disk->fops = &bcomp_fops;
 	disk->private_data = dev;
 
+	cp = get_capacity(bdev->bd_disk);
+	set_capacity(disk, cp);
+
 	dev->bcomp_disk = disk;
-	snprintf(buf, DISK_NAME_LEN, "bcomp%d", disk->first_minor);
-	strscpy(disk->disk_name, buf, DISK_NAME_LEN);
+	snprintf(disk->disk_name, DISK_NAME_LEN, "bcomp%d", disk->first_minor);
+
 	ret = add_disk(disk);
 	if (ret)
 		goto out_cleanup_disk;
@@ -142,13 +141,11 @@ exit_fail:
 static void bcomp_submit_bio(struct bio *original_bio)
 {
 	struct bcomp_bdev *dev = original_bio->bi_bdev->bd_disk->private_data;
-	struct bio *bio_clone =
-		bio_alloc_clone(dev->underlying_bdev, original_bio, GFP_NOIO,
-				dev->bs); //TODO: GFP_NOIO or something else?
+	struct bio *bio_clone = bio_alloc_clone(
+		dev->underlying_bdev, original_bio, GFP_KERNEL, dev->bs);
 
 	struct bcomp_meta_info *meta = kzalloc(sizeof(*meta), GFP_KERNEL);
 	if (!meta) {
-		//TODO: -ENOMEM handling???
 		original_bio->bi_end_io(original_bio);
 		return;
 	}
@@ -158,7 +155,7 @@ static void bcomp_submit_bio(struct bio *original_bio)
 	bio_clone->bi_end_io = bcomp_bio_end_io;
 	bio_clone->bi_private = meta;
 
-	dev->underlying_bdev->bd_disk->fops->submit_bio(bio_clone);
+	submit_bio(bio_clone);
 }
 
 static void bcomp_bio_end_io(struct bio *clone_bio)
@@ -167,7 +164,7 @@ static void bcomp_bio_end_io(struct bio *clone_bio)
 	struct bio *original_bio = meta->original_bio;
 
 	kfree(meta);
-	original_bio->bi_end_io(original_bio);
+	bio_endio(original_bio);
 	bio_put(clone_bio);
 }
 
@@ -190,12 +187,15 @@ static int bcomp_disk_create(const char *arg, const struct kernel_param *kp)
 static int bcomp_disk_info(char *buf, const struct kernel_param *kp)
 {
 	if (bcomp_dev == NULL) {
-		bcomp_log("no device for unmapping");
+		bcomp_log("no mapped device");
 		return -ENODEV;
 	}
 
-	strscpy(buf, bcomp_dev->underlying_bdev->bd_disk->disk_name,
-		DISK_NAME_LEN);
+	bcomp_log("name:");
+	bcomp_log(bcomp_dev->underlying_bdev->bd_disk->disk_name);
+
+	snprintf(buf, DISK_NAME_LEN, "bio_comp_dev: %s\n",
+		 bcomp_dev->underlying_bdev->bd_disk->disk_name);
 
 	return 0;
 }
@@ -216,6 +216,7 @@ static int bcomp_disk_delete(const char *arg, const struct kernel_param *kp)
 	}
 
 	bcomp_bdev_free(bcomp_dev);
+	bcomp_dev = NULL;
 
 	bcomp_log("device unmapped");
 
@@ -255,3 +256,6 @@ static void __exit bcomp_exit(void)
 
 MODULE_AUTHOR("Georgy Sichkar <mail4egor@gmail.com>");
 MODULE_LICENSE("GPL");
+
+module_init(bcomp_init);
+module_exit(bcomp_exit);
