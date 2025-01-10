@@ -1,0 +1,11 @@
+[global]
+thread=1
+verify=sha256
+size=4M
+rw=write
+bs=8k
+direct=1
+
+[test]
+filename=/dev/bcomp0
+numjobs=1

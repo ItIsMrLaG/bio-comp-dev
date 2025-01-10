@@ -1,0 +1,12 @@
+[global]
+thread=1
+verify=sha256
+ioengine=sync
+size=4M
+rw=rw
+bs=64k
+direct=1
+
+[test]
+filename=/dev/bcomp0
+numjobs=1
