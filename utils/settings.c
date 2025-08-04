@@ -188,7 +188,7 @@ enum parser_stage parse_user_settings(const char *arg,
 		cur_idx = str_get_next_delim_idx(arg, sb_idx);
 		if ((cur_idx - sb_idx) == 0) {
 			BCOMP_ERRLOG("following argument is missing:");
-			BCOMP_ERRLOG(STAGE_PP(stage));
+			BCOMP_ERRLOG("%s", STAGE_PP(stage));
 			goto err;
 		}
 
@@ -253,7 +253,8 @@ enum parser_stage parse_user_settings(const char *arg,
 
 err:
 	BCOMP_ERRLOG(
-		"bcomp-table should look like:\n<bs> <comp-profile> <comp-prfl-id> <decomp-prfl-id> <map-profile> /dev/<path>");
-	BCOMP_ERRLOG(STAGE_PP(stage));
+		"bcomp-table should look like:\n<bs> <comp-profile> <comp-prfl-id> <decomp-prfl-id> <map-profile> /dev/<path>\nActual: %s",
+		STAGE_PP(stage)
+	);
 	return stage;
 }

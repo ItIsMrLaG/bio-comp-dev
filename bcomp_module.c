@@ -56,8 +56,7 @@ static int bcomp_disk_create(const char *arg, const struct kernel_param *kp)
 
 	free_user_settings(settings);
 
-	BCOMP_LOG("device mapped");
-	BCOMP_LOG(arg);
+	BCOMP_LOG("device mapped: %s", arg);
 	return 0;
 
 free_dev:
