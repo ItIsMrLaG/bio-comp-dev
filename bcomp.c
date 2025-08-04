@@ -504,7 +504,7 @@ static blk_status_t write_req_submit(enum req_op op_type,
 
 	new_bio = bio_alloc(bcdev->under_dev->bdev,
 			    __bio_size_to_bio_pages(original_bio), op_type,
-			    GFP_NOIO);
+			    GFP_NOIO); 	 // FIXME: there is a bug (nr_vecs != __bio_size_to_bio_pages)
 	if (!new_bio)
 		return BLK_STS_RESOURCE;
 
